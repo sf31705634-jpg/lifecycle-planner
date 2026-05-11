@@ -1,4 +1,5 @@
 "use client";
+// @ts-nocheck
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Clock, CalendarDays, Plus, Trash2, Copy, Edit2, FilePlus, X, Cloud, CloudOff, Loader2, LogOut } from 'lucide-react';

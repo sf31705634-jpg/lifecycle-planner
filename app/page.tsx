@@ -112,7 +112,7 @@ const generateTimeline = (events) => {
       durationMinutes: clusterEnd - currentTime,
       events: clusterEvents
     });
-
+    
     currentTime = clusterEnd;
   }
 
@@ -165,7 +165,6 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (!currentUser) {
-        // 未ログイン状態ならローディングを終わらせてログイン画面を出す
         setLoading(false);
       }
     });
@@ -228,7 +227,7 @@ export default function App() {
   // --- モーダル用状態 ---
   const [renameModalOpen, setRenameModalOpen] = useState(false);
   const [renameInput, setRenameInput] = useState('');
-
+  
   // 予定(イベント)編集
   const [editEventId, setEditEventId] = useState(null);
   const [editEventTitle, setEditEventTitle] = useState('');
@@ -274,7 +273,7 @@ export default function App() {
       if (dragState.isLocked) return;
       const deltaY = e.clientY - dragState.initialY;
       const deltaMins = deltaY / 1.2;
-
+      
       let newStartMins = Math.round((dragState.startMins + deltaMins) / 30) * 30;
 
       if (newStartMins < 0) newStartMins = 0;
@@ -321,7 +320,7 @@ export default function App() {
           }));
         }
       }
-
+      
       setDragState(null);
       setDragPreview(null);
     };
@@ -352,7 +351,7 @@ export default function App() {
     const newId = `b_${Date.now()}`;
     const newBaseline = {
       name: `${activeBaseline.name} (コピー)`,
-      events: activeBaseline.events.map(ev => ({ ...ev, id: `e_${Date.now()}_${Math.random()}` }))
+      events: activeBaseline.events.map(ev => ({...ev, id: `e_${Date.now()}_${Math.random()}`}))
     };
     if (user && db) {
       await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'baselines', newId), newBaseline);
@@ -413,7 +412,7 @@ export default function App() {
     const startMins = Math.ceil(nowMins / 30) * 30;
     let endMins = startMins + 60;
     if (endMins > 1440) endMins = 1440;
-
+    
     setEditEventId(`e_${Date.now()}`);
     setIsNewEvent(true);
     setEditEventTitle('');
@@ -483,9 +482,9 @@ export default function App() {
           <CalendarDays className="w-12 h-12 text-blue-600 mx-auto mb-4" />
           <h1 className="font-bold text-2xl text-slate-800 mb-3">My Baseline</h1>
           <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed">
-            スケジュールを複数の端末で同期するには<br />Googleアカウントでログインしてください。
+            スケジュールを複数の端末で同期するには<br/>Googleアカウントでログインしてください。
           </p>
-          <button
+          <button 
             onClick={handleGoogleLogin}
             className="w-full bg-blue-600 text-white font-bold py-3.5 px-4 rounded-xl hover:bg-blue-700 transition-colors shadow-sm hover:shadow active:scale-[0.98]"
           >
@@ -498,7 +497,7 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 font-sans overflow-hidden relative">
-
+      
       {/* ヘッダー */}
       <header className="bg-white border-b px-4 py-3 flex items-center justify-between shadow-sm z-10 shrink-0">
         <div className="flex items-center gap-2">
@@ -515,10 +514,10 @@ export default function App() {
             <CloudOff className="w-4 h-4 text-slate-300 ml-1" title="ローカル保存" />
           )}
         </div>
-
+        
         {/* ベースライン操作エリア */}
         <div className="flex items-center gap-1">
-          <select
+          <select 
             className="bg-slate-100 border-none rounded-lg px-2 py-2 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none w-28 text-ellipsis"
             value={activeBaselineId}
             onChange={(e) => setActiveBaselineId(e.target.value)}
@@ -528,15 +527,15 @@ export default function App() {
             ))}
           </select>
           <div className="flex border-l border-slate-200 pl-1 ml-1">
-            <button onClick={handleAddBlankBaseline} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors" title="白紙から作成">
+             <button onClick={handleAddBlankBaseline} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors" title="白紙から作成">
               <FilePlus className="w-4 h-4" />
             </button>
             <button onClick={handleAddBaseline} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors" title="現在のテンプレートを複製">
               <Copy className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => { setRenameInput(activeBaseline?.name || ''); setRenameModalOpen(true); }}
-              className="p-1.5 text-slate-500 hover:text-green-600 hover:bg-green-50 rounded-md transition-colors"
+            <button 
+              onClick={() => { setRenameInput(activeBaseline?.name || ''); setRenameModalOpen(true); }} 
+              className="p-1.5 text-slate-500 hover:text-green-600 hover:bg-green-50 rounded-md transition-colors" 
               title="名前を変更"
             >
               <Edit2 className="w-4 h-4" />
@@ -578,7 +577,7 @@ export default function App() {
 
                   {block.type === 'free' ? (
                     // --- 自由時間ブロック ---
-                    <div
+                    <div 
                       style={{ height: `${heightPx}px` }}
                       onClick={() => handleOpenEventModal(block)}
                       className="w-full rounded-xl border-2 border-dashed border-blue-200 bg-white/50 flex flex-col justify-center items-center cursor-pointer hover:bg-blue-50 transition-colors group"
@@ -595,19 +594,23 @@ export default function App() {
                         const startOffset = timeToMinutes(ev.startTime) - timeToMinutes(block.startTime);
                         const evEndMins = timeToMinutes(ev.endTime) === 0 && ev.endTime === '00:00' ? 1440 : timeToMinutes(ev.endTime);
                         const duration = evEndMins - timeToMinutes(ev.startTime);
-
+                        
                         const widthPct = 100 / block.events.length;
                         const leftPct = idx * widthPct;
+
+                        // ★ ここが新しくなった計算式です！枠に合わせて伸び縮みします
+                        const topPx = block.durationMinutes > 0 ? (startOffset / block.durationMinutes) * heightPx : 0;
+                        const evHeightPx = block.durationMinutes > 0 ? (duration / block.durationMinutes) * heightPx : heightPx;
 
                         // ロック状態とドラッグ状態による見た目の変更
                         const borderStyle = ev.isLocked ? 'border border-black/5 opacity-50 shadow-none' : 'border-2 border-black/5 hover:brightness-95 shadow-sm';
                         const dragStyle = ev.isDragging ? 'scale-105 shadow-xl ring-2 ring-blue-400 z-50 opacity-90' : 'z-10';
-
+                        
                         // 時間が短い場合はレイアウトを横並びにする
                         const isShort = duration <= 30;
 
                         return (
-                          <div
+                          <div 
                             key={ev.id}
                             onPointerDown={(e) => {
                               // ドラッグ開始の処理
@@ -628,8 +631,8 @@ export default function App() {
                             }}
                             className={`absolute rounded-xl flex overflow-hidden transition-all duration-200 ${isShort ? 'flex-row items-center px-2 py-1 gap-1' : 'flex-col p-2'} ${ev.color} ${borderStyle} ${dragStyle} ${!ev.isLocked ? 'cursor-grab active:cursor-grabbing touch-none select-none' : 'cursor-pointer'}`}
                             style={{
-                              top: `${startOffset * 1.2}px`,
-                              height: `${duration * 1.2}px`,
+                              top: `${topPx}px`,       // ← 変更！
+                              height: `${evHeightPx}px`, // ← 変更！
                               width: `calc(${widthPct}% - 4px)`,
                               left: `calc(${leftPct}% + 2px)`,
                             }}
@@ -672,13 +675,13 @@ export default function App() {
       </button>
 
       {/* --- モーダル群 --- */}
-
+      
       {/* 1. テンプレート名変更 */}
       {renameModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl">
             <h3 className="font-bold text-lg mb-3 text-slate-800">テンプレート名の変更</h3>
-            <input
+            <input 
               type="text" value={renameInput} onChange={(e) => setRenameInput(e.target.value)}
               className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 mb-4 focus:border-blue-500 outline-none" autoFocus
             />
@@ -696,17 +699,17 @@ export default function App() {
           <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-bold text-lg text-slate-800">{isNewEvent ? '新しい予定を追加' : '予定の編集'}</h3>
-              <button onClick={() => setEditEventId(null)} className="p-1 text-slate-400 hover:bg-slate-100 rounded-full"><X className="w-5 h-5" /></button>
+              <button onClick={() => setEditEventId(null)} className="p-1 text-slate-400 hover:bg-slate-100 rounded-full"><X className="w-5 h-5"/></button>
             </div>
-
+            
             {/* ロック切り替えトグル */}
             <label className={`flex items-center justify-between mb-5 p-3 rounded-xl border-2 cursor-pointer transition-colors ${editEventIsLocked ? 'bg-slate-100 border-slate-300' : 'bg-white border-slate-200'}`}>
               <div>
                 <span className="font-bold text-sm text-slate-800 block">予定をロックする</span>
                 <span className="text-xs text-slate-500">誤って変更や削除されるのを防ぎます</span>
               </div>
-              <input
-                type="checkbox"
+              <input 
+                type="checkbox" 
                 checked={editEventIsLocked}
                 onChange={(e) => setEditEventIsLocked(e.target.checked)}
                 className="w-5 h-5 accent-slate-600 rounded"
@@ -716,7 +719,7 @@ export default function App() {
             {/* ロック中は各入力欄を disabled にして非活性化 */}
             <div className={`transition-opacity ${editEventIsLocked ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
               <label className="block text-sm font-bold text-slate-700 mb-1">タイトル</label>
-              <input
+              <input 
                 type="text" value={editEventTitle} onChange={(e) => setEditEventTitle(e.target.value)} placeholder="例: ミーティング"
                 disabled={editEventIsLocked}
                 className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 mb-4 focus:border-blue-500 outline-none disabled:bg-slate-50"
@@ -738,7 +741,7 @@ export default function App() {
               <label className="block text-sm font-bold text-slate-700 mb-2">カラー</label>
               <div className="flex gap-2 flex-wrap mb-6">
                 {THEME_COLORS.map(c => (
-                  <button
+                  <button 
                     key={c.id} onClick={() => setEditEventColor(c.value)} disabled={editEventIsLocked}
                     className={`w-8 h-8 rounded-full border-2 transition-all ${c.value.split(' ')[0]} ${editEventColor === c.value ? 'ring-2 ring-slate-800 ring-offset-2 scale-110' : 'border-transparent'} disabled:cursor-not-allowed`}
                   />
@@ -751,8 +754,8 @@ export default function App() {
                 保存する
               </button>
               {!isNewEvent && (
-                <button
-                  onClick={handleDeleteEvent}
+                <button 
+                  onClick={handleDeleteEvent} 
                   disabled={editEventIsLocked}
                   className="w-full py-3 text-rose-600 font-bold bg-rose-50 rounded-xl hover:bg-rose-100 flex justify-center items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >

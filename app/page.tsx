@@ -2,7 +2,7 @@
 // @ts-nocheck
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Clock, CalendarDays, Plus, Trash2, Copy, Edit2, FilePlus, X, Cloud, CloudOff, Loader2, LogOut, ChevronLeft, ChevronRight, Settings, ArrowLeft } from 'lucide-react';
+import { Clock, CalendarDays, Calendar, Plus, Trash2, Copy, Edit2, FilePlus, X, Cloud, CloudOff, Loader2, LogOut, ChevronLeft, ChevronRight, Settings, ArrowLeft } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
@@ -23,7 +23,7 @@ const auth = app ? getAuth(app) : null;
 const db = app ? getFirestore(app) : null;
 const appId = "lifecycle-planner-furuyama";
 
-// --- Utils: 時間計算用の補助関数 ---
+// --- Utils: 時間・日付計算用の補助関数 ---
 const timeToMinutes = (timeStr) => {
   if (!timeStr) return 0;
   const [h, m] = timeStr.split(':').map(Number);
@@ -52,6 +52,46 @@ const isSameDay = (date1, date2) => {
   return date1.getFullYear() === date2.getFullYear() &&
          date1.getMonth() === date2.getMonth() &&
          date1.getDate() === date2.getDate();
+};
+
+// 月間カレンダー生成用
+const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
+
+const generateMonthGrid = (date) => {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const daysInMonth = getDaysInMonth(year, month);
+  const firstDay = getFirstDayOfMonth(year, month);
+  
+  const grid = [];
+  let currentWeek = [];
+  
+  for (let i = 0; i < firstDay; i++) {
+    currentWeek.push(null);
+  }
+  
+  for (let d = 1; d <= daysInMonth; d++) {
+    currentWeek.push(new Date(year, month, d));
+    if (currentWeek.length === 7) {
+      grid.push(currentWeek);
+      currentWeek = [];
+    }
+  }
+  
+  if (currentWeek.length > 0) {
+    while (currentWeek.length < 7) {
+      currentWeek.push(null);
+    }
+    grid.push(currentWeek);
+  }
+
+  // レイアウトを安定させるために常に6行にする
+  while (grid.length < 6) {
+    grid.push(Array(7).fill(null));
+  }
+  
+  return grid;
 };
 
 // --- カラーパレットの定義 ---
@@ -157,7 +197,7 @@ export default function App() {
   const [user, setUser] = useState(null);
 
   // --- 大規模改修: モードと状態 ---
-  const [viewMode, setViewMode] = useState('daily'); // 'daily' | 'template'
+  const [viewMode, setViewMode] = useState('monthly'); // 'monthly' | 'daily' | 'template'
   const [currentDate, setCurrentDate] = useState(new Date());
   
   const [baselines, setBaselines] = useState([]);
@@ -239,7 +279,7 @@ export default function App() {
       const b = baselines.find(b => b.id === activeBaselineId);
       return b ? b.events : [];
     } else {
-      return dailySchedules[dateStr]; // 未設定の場合は undefined になる
+      return dailySchedules[dateStr]; // 未設定の場合は undefined
     }
   }, [viewMode, activeBaselineId, baselines, dailySchedules, dateStr]);
 
@@ -275,7 +315,7 @@ export default function App() {
 
   // --- データ保存補助 ---
   const saveEvents = async (newEvents) => {
-    if (!user || !db) return; // ローカルでの処理は省略（Firestore前提）
+    if (!user || !db) return;
     if (viewMode === 'template') {
       await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'baselines', activeBaselineId), { events: newEvents }, { merge: true });
     } else {
@@ -283,16 +323,17 @@ export default function App() {
     }
   };
 
-  // --- アクション (Daily 日付操作) ---
+  // --- アクション (日付操作) ---
   const handlePrevDay = () => { const d = new Date(currentDate); d.setDate(d.getDate() - 1); setCurrentDate(d); };
   const handleNextDay = () => { const d = new Date(currentDate); d.setDate(d.getDate() + 1); setCurrentDate(d); };
+  const handlePrevMonth = () => { const d = new Date(currentDate); d.setMonth(d.getMonth() - 1); setCurrentDate(d); };
+  const handleNextMonth = () => { const d = new Date(currentDate); d.setMonth(d.getMonth() + 1); setCurrentDate(d); };
   const handleToday = () => { setCurrentDate(new Date()); };
 
   // --- アクション (Daily テンプレート適用) ---
   const applyBaseline = async (baselineId) => {
     const baseline = baselines.find(b => b.id === baselineId);
     if (!baseline || !user || !db) return;
-    // 新しいIDを割り当ててコピーする（独立させるため）
     const newEvents = baseline.events.map(ev => ({ ...ev, id: `e_${Date.now()}_${Math.random()}` }));
     await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'dailySchedules', dateStr), { events: newEvents });
   };
@@ -416,166 +457,251 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-slate-50 font-sans overflow-hidden relative">
       
-      {/* ヘッダー: モードによって表示を切り替え */}
-      {viewMode === 'daily' ? (
-        <header className="bg-white border-b px-2 py-3 flex items-center justify-between shadow-sm z-10 shrink-0">
-          <div className="flex items-center gap-2 w-1/4">
-            <button onClick={() => setViewMode('template')} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-blue-600 hover:bg-blue-50 px-2 py-1.5 rounded-lg transition-colors ml-1">
-              <Settings className="w-4 h-4" /><span className="hidden sm:inline">テンプレート</span>
+      {/* 共通ヘッダー */}
+      <header className={`px-2 py-3 flex items-center justify-between shadow-sm z-10 shrink-0 ${viewMode === 'template' ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-b border-slate-200'}`}>
+        
+        {/* 左側：ナビゲーション */}
+        <div className="flex items-center gap-2 w-1/4">
+          {viewMode === 'daily' && (
+            <button onClick={() => setViewMode('monthly')} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-blue-600 hover:bg-blue-50 px-2 py-1.5 rounded-lg transition-colors ml-1">
+              <Calendar className="w-4 h-4" /><span className="hidden sm:inline">月間カレンダー</span>
             </button>
-          </div>
-          
-          <div className="flex items-center justify-center gap-3 flex-1">
-            <button onClick={handlePrevDay} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-full"><ChevronLeft className="w-5 h-5"/></button>
-            <div className="flex flex-col items-center cursor-pointer" onClick={handleToday}>
-              <span className="font-bold text-lg text-slate-800 leading-none">{formatDisplayDate(currentDate)}</span>
-              {isSameDay(currentDate, nowDate) && <span className="text-[10px] font-bold text-blue-500 mt-0.5">今日</span>}
+          )}
+          {viewMode === 'monthly' && (
+            <div className="flex items-center gap-1.5 text-blue-600 ml-2">
+              <CalendarDays className="w-5 h-5" /><span className="font-bold text-sm hidden sm:inline">My Baseline</span>
             </div>
-            <button onClick={handleNextDay} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-full"><ChevronRight className="w-5 h-5"/></button>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 w-1/4 pr-2">
-            <Cloud className="w-4 h-4 text-emerald-500" title="クラウド同期中" />
-            <button onClick={handleLogout} className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600" title="ログアウト"><LogOut className="w-4 h-4" /></button>
-          </div>
-        </header>
-      ) : (
-        <header className="bg-slate-800 border-b border-slate-700 px-3 py-3 flex items-center justify-between shadow-sm z-10 shrink-0 text-white">
-          <div className="flex items-center gap-2 w-1/4">
-            <button onClick={() => setViewMode('daily')} className="flex items-center gap-1 text-xs font-bold text-slate-300 hover:text-white px-2 py-1.5 rounded-lg transition-colors">
-              <ArrowLeft className="w-4 h-4" /><span className="hidden sm:inline">カレンダーへ戻る</span>
+          )}
+          {viewMode === 'template' && (
+            <button onClick={() => setViewMode('daily')} className="flex items-center gap-1 text-xs font-bold text-slate-300 hover:text-white px-2 py-1.5 rounded-lg transition-colors ml-1">
+              <ArrowLeft className="w-4 h-4" /><span className="hidden sm:inline">戻る</span>
             </button>
-          </div>
-
-          <div className="flex items-center justify-center flex-1 gap-1">
-            <select className="bg-slate-700 border-none rounded-lg px-2 py-1.5 text-sm font-bold text-white focus:ring-2 focus:ring-blue-400 outline-none w-32 sm:w-48 text-ellipsis" value={activeBaselineId} onChange={(e) => setActiveBaselineId(e.target.value)}>
-              {baselines.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-            <div className="flex border-l border-slate-600 pl-1 ml-1">
-              <button onClick={handleAddBlankBaseline} className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded-md" title="白紙から作成"><FilePlus className="w-4 h-4" /></button>
-              <button onClick={handleAddBaseline} className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded-md" title="現在のテンプレートを複製"><Copy className="w-4 h-4" /></button>
-              <button onClick={() => { setRenameInput(baselines.find(b=>b.id===activeBaselineId)?.name || ''); setRenameModalOpen(true); }} className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded-md" title="名前を変更"><Edit2 className="w-4 h-4" /></button>
-              <button onClick={handleDeleteBaseline} disabled={baselines.length <= 1} className="p-1.5 text-slate-300 hover:text-rose-400 hover:bg-slate-700 rounded-md disabled:opacity-30" title="削除"><Trash2 className="w-4 h-4" /></button>
-            </div>
-          </div>
-          
-          <div className="w-1/4"></div>
-        </header>
-      )}
-
-      {/* メインエリア */}
-      <main className={`flex-1 overflow-y-auto px-4 py-6 pb-24 ${viewMode === 'template' ? 'bg-slate-100' : ''}`}>
-        <div className="max-w-md mx-auto space-y-2">
-          
-          {/* Dailyモードで、その日の予定が未作成の場合の画面 */}
-          {viewMode === 'daily' && currentEvents === undefined ? (
-            <div className="flex flex-col items-center justify-center pt-10 pb-20">
-              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
-                <CalendarDays className="w-8 h-8 text-blue-500" />
-              </div>
-              <h2 className="text-xl font-bold text-slate-800 mb-2">予定がありません</h2>
-              <p className="text-slate-500 text-sm mb-8 text-center">この日のスケジュールはまだ空っぽです。<br/>テンプレートを選んで予定を作りましょう！</p>
-              
-              <div className="w-full space-y-3">
-                {baselines.map(b => (
-                  <button key={b.id} onClick={() => applyBaseline(b.id)} className="w-full bg-white border-2 border-blue-100 text-blue-600 font-bold py-4 px-4 rounded-xl hover:bg-blue-50 hover:border-blue-200 transition-all flex items-center justify-between shadow-sm">
-                    <span>{b.name} を適用する</span>
-                    <ChevronRight className="w-5 h-5 opacity-50" />
-                  </button>
-                ))}
-                <div className="pt-4">
-                  <button onClick={applyBlank} className="w-full bg-transparent text-slate-500 font-bold py-3 px-4 rounded-xl hover:bg-slate-200 transition-colors">
-                    白紙からスケジュールを作る
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            /* 通常のタイムライン表示 */
-            timelineBlocks.map((block) => {
-              const heightPx = Math.max(block.durationMinutes * 1.2, 48);
-              const startMins = timeToMinutes(block.startTime);
-              const endMins = timeToMinutes(block.endTime) === 0 && block.endTime === '00:00' ? 1440 : timeToMinutes(block.endTime);
-              const isCurrentTimeInSlot = isTodayView && currentMinutes >= startMins && currentMinutes < endMins;
-              const progressPercent = isCurrentTimeInSlot ? ((currentMinutes - startMins) / block.durationMinutes) * 100 : 0;
-
-              return (
-                <div key={block.id} className="flex gap-3 relative">
-                  <div className="w-12 shrink-0 flex flex-col items-end text-xs text-slate-400 font-medium pt-2">
-                    <span>{block.startTime}</span>
-                  </div>
-
-                  <div className="flex-1 relative">
-                    {/* 現在時刻バー（今日だけ表示） */}
-                    {isCurrentTimeInSlot && (
-                      <div className="absolute left-[-56px] right-0 z-10 flex items-center pointer-events-none" style={{ top: `${progressPercent}%`, transform: 'translateY(-50%)' }}>
-                        <div className="text-[10px] font-bold text-red-500 bg-white/90 px-1 rounded shadow-sm mr-1 border border-red-100">NOW</div>
-                        <div className="w-2 h-2 rounded-full bg-red-500 shrink-0"></div>
-                        <div className="flex-1 h-[2px] bg-red-500/80 shadow-[0_0_4px_rgba(239,68,68,0.5)]"></div>
-                      </div>
-                    )}
-
-                    {block.type === 'free' ? (
-                      <div style={{ height: `${heightPx}px` }} onClick={() => handleOpenEventModal(block)} className="w-full rounded-xl border-2 border-dashed border-blue-200 bg-white/50 flex flex-col justify-center items-center cursor-pointer hover:bg-blue-50 transition-colors group">
-                        <span className="text-sm font-bold text-blue-300 group-hover:text-blue-500">＋ 予定を追加</span>
-                        <span className="text-xs font-medium text-blue-300 mt-1">{block.durationMinutes}分</span>
-                      </div>
-                    ) : (
-                      <div className="relative w-full" style={{ height: `${heightPx}px` }}>
-                        {block.events.map((ev, idx) => {
-                          const startOffset = timeToMinutes(ev.startTime) - timeToMinutes(block.startTime);
-                          const evEndMins = timeToMinutes(ev.endTime) === 0 && ev.endTime === '00:00' ? 1440 : timeToMinutes(ev.endTime);
-                          const duration = evEndMins - timeToMinutes(ev.startTime);
-                          const widthPct = 100 / block.events.length;
-                          const leftPct = idx * widthPct;
-                          const topPx = block.durationMinutes > 0 ? (startOffset / block.durationMinutes) * heightPx : 0;
-                          const evHeightPx = block.durationMinutes > 0 ? (duration / block.durationMinutes) * heightPx : heightPx;
-                          
-                          const borderStyle = ev.isLocked ? 'border border-black/5 opacity-50 shadow-none' : 'border-2 border-black/5 hover:brightness-95 shadow-sm';
-                          const dragStyle = ev.isDragging ? 'scale-105 shadow-xl ring-2 ring-blue-400 z-50 opacity-90' : 'z-10';
-                          const isShort = duration <= 30;
-
-                          return (
-                            <div key={ev.id}
-                              onPointerDown={(e) => {
-                                e.stopPropagation();
-                                setDragState({ id: ev.id, isLocked: ev.isLocked, startMins: timeToMinutes(ev.startTime), duration: timeToMinutes(ev.endTime === '00:00' ? '24:00' : ev.endTime) - timeToMinutes(ev.startTime), initialY: e.clientY });
-                                setDragPreview({ startMins: timeToMinutes(ev.startTime), endMins: timeToMinutes(ev.endTime === '00:00' ? '24:00' : ev.endTime) });
-                                e.currentTarget.setPointerCapture(e.pointerId);
-                              }}
-                              className={`absolute rounded-xl flex overflow-hidden transition-all duration-200 ${isShort ? 'flex-row items-center px-2 py-1 gap-1' : 'flex-col p-2'} ${ev.color} ${borderStyle} ${dragStyle} ${!ev.isLocked ? 'cursor-grab active:cursor-grabbing touch-none select-none' : 'cursor-pointer'}`}
-                              style={{ top: `${topPx}px`, height: `${evHeightPx}px`, width: `calc(${widthPct}% - 4px)`, left: `calc(${leftPct}% + 2px)` }}
-                            >
-                              {isShort ? (
-                                <>
-                                  <span className="font-bold text-[12px] truncate flex-1 leading-tight pointer-events-none">{ev.title}</span>
-                                  <span className="text-[9px] opacity-80 font-medium shrink-0 pointer-events-none">{ev.startTime} ({duration}分)</span>
-                                </>
-                              ) : (
-                                <>
-                                  <div className="flex justify-between items-start mb-1 pointer-events-none">
-                                    <span className="font-bold text-[13px] leading-tight line-clamp-2">{ev.title}</span>
-                                  </div>
-                                  <div className="text-[10px] opacity-80 flex items-center gap-1 mt-auto font-medium pointer-events-none">
-                                    <Clock className="w-2.5 h-2.5" />{ev.startTime}-{ev.endTime} <span className="ml-1">({duration}分)</span>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })
           )}
         </div>
+        
+        {/* 中央：日付・テンプレート操作 */}
+        <div className="flex items-center justify-center flex-1 gap-2">
+          {viewMode === 'daily' && (
+            <>
+              <button onClick={handlePrevDay} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-full"><ChevronLeft className="w-5 h-5"/></button>
+              <div className="flex flex-col items-center cursor-pointer" onClick={handleToday}>
+                <span className="font-bold text-lg text-slate-800 leading-none">{formatDisplayDate(currentDate)}</span>
+                {isSameDay(currentDate, nowDate) && <span className="text-[10px] font-bold text-blue-500 mt-0.5">今日</span>}
+              </div>
+              <button onClick={handleNextDay} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-full"><ChevronRight className="w-5 h-5"/></button>
+            </>
+          )}
+          {viewMode === 'monthly' && (
+            <>
+              <button onClick={handlePrevMonth} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-full"><ChevronLeft className="w-5 h-5"/></button>
+              <div className="flex flex-col items-center cursor-pointer" onClick={handleToday}>
+                <span className="font-bold text-lg text-slate-800 leading-none">{currentDate.getFullYear()}年 {currentDate.getMonth() + 1}月</span>
+              </div>
+              <button onClick={handleNextMonth} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-full"><ChevronRight className="w-5 h-5"/></button>
+            </>
+          )}
+          {viewMode === 'template' && (
+            <div className="flex items-center gap-1">
+              <select className="bg-slate-700 border-none rounded-lg px-2 py-1.5 text-sm font-bold text-white focus:ring-2 focus:ring-blue-400 outline-none w-32 sm:w-48 text-ellipsis" value={activeBaselineId} onChange={(e) => setActiveBaselineId(e.target.value)}>
+                {baselines.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+              <div className="flex border-l border-slate-600 pl-1 ml-1">
+                <button onClick={handleAddBlankBaseline} className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded-md" title="白紙から作成"><FilePlus className="w-4 h-4" /></button>
+                <button onClick={handleAddBaseline} className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded-md" title="現在のテンプレートを複製"><Copy className="w-4 h-4" /></button>
+                <button onClick={() => { setRenameInput(baselines.find(b=>b.id===activeBaselineId)?.name || ''); setRenameModalOpen(true); }} className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded-md" title="名前を変更"><Edit2 className="w-4 h-4" /></button>
+                <button onClick={handleDeleteBaseline} disabled={baselines.length <= 1} className="p-1.5 text-slate-300 hover:text-rose-400 hover:bg-slate-700 rounded-md disabled:opacity-30" title="削除"><Trash2 className="w-4 h-4" /></button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 右側：テンプレート設定・ログアウト */}
+        <div className="flex items-center justify-end gap-2 w-1/4 pr-2">
+          {viewMode !== 'template' && (
+            <button onClick={() => setViewMode('template')} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-blue-600 hover:bg-blue-50 px-2 py-1.5 rounded-lg transition-colors mr-1">
+              <Settings className="w-4 h-4" /><span className="hidden sm:inline">テンプレート</span>
+            </button>
+          )}
+          <Cloud className={`w-4 h-4 hidden sm:block ${viewMode === 'template' ? 'text-emerald-400' : 'text-emerald-500'}`} title="クラウド同期中" />
+          <button onClick={handleLogout} className={`p-1.5 rounded-full transition-colors ${viewMode === 'template' ? 'text-slate-400 hover:bg-slate-700 hover:text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'}`} title="ログアウト"><LogOut className="w-4 h-4" /></button>
+        </div>
+      </header>
+
+      {/* メインエリア */}
+      <main className={`flex-1 overflow-y-auto px-4 py-4 pb-24 ${viewMode === 'template' ? 'bg-slate-100' : ''}`}>
+        
+        {/* --- 月間カレンダーモード --- */}
+        {viewMode === 'monthly' && (
+          <div className="max-w-4xl mx-auto w-full h-full flex flex-col">
+            <div className="grid grid-cols-7 gap-1 mb-2">
+              {['日', '月', '火', '水', '木', '金', '土'].map((d, i) => (
+                <div key={d} className={`text-center text-xs font-bold py-1 ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-slate-500'}`}>{d}</div>
+              ))}
+            </div>
+            {/* カレンダーのマス目 */}
+            <div className="flex-1 grid grid-cols-7 grid-rows-6 gap-1 pb-4">
+              {generateMonthGrid(currentDate).map((week, wIdx) => 
+                week.map((dateObj, dIdx) => {
+                  if (!dateObj) return <div key={`empty-${wIdx}-${dIdx}`} className="bg-transparent rounded-lg"></div>;
+                  
+                  const dStr = getYYYYMMDD(dateObj);
+                  const isToday = isSameDay(dateObj, nowDate);
+                  const dayEvents = dailySchedules[dStr]; // 未設定なら undefined
+                  
+                  return (
+                    <div 
+                      key={dStr} 
+                      onClick={() => { setCurrentDate(dateObj); setViewMode('daily'); }} 
+                      className={`bg-white border rounded-lg p-1 sm:p-1.5 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all flex flex-col overflow-hidden ${isToday ? 'border-blue-300 shadow-sm ring-1 ring-blue-100' : 'border-slate-200'}`}
+                    >
+                      {/* 日付の数字 */}
+                      <div className="flex justify-center mb-1">
+                        <span className={`text-[10px] sm:text-xs font-bold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-blue-600 text-white' : (dIdx === 0 ? 'text-red-500' : dIdx === 6 ? 'text-blue-500' : 'text-slate-700')}`}>
+                          {dateObj.getDate()}
+                        </span>
+                      </div>
+                      
+                      {/* その日の予定の簡易表示 */}
+                      <div className="flex-1 flex flex-col gap-0.5 overflow-hidden">
+                        {dayEvents === undefined ? (
+                          <div className="w-full h-full flex items-center justify-center pt-2 sm:pt-0">
+                            <span className="text-[9px] text-slate-300 font-medium">未設定</span>
+                          </div>
+                        ) : (
+                          <>
+                            {dayEvents.slice(0, 4).map((ev, i) => (
+                              <div key={i} className={`text-[8px] sm:text-[9px] px-1 py-0.5 truncate rounded border border-black/5 leading-tight ${ev.color}`}>
+                                {ev.title}
+                              </div>
+                            ))}
+                            {dayEvents.length > 4 && (
+                              <div className="text-[8px] text-slate-400 font-bold text-center mt-0.5">+{dayEvents.length - 4}</div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* --- デイリー ＆ テンプレート モード --- */}
+        {(viewMode === 'daily' || viewMode === 'template') && (
+          <div className="max-w-md mx-auto space-y-2">
+            
+            {/* デイリーモードで予定未作成のときのウェルカム画面 */}
+            {viewMode === 'daily' && currentEvents === undefined ? (
+              <div className="flex flex-col items-center justify-center pt-10 pb-20">
+                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+                  <CalendarDays className="w-8 h-8 text-blue-500" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-800 mb-2">予定がありません</h2>
+                <p className="text-slate-500 text-sm mb-8 text-center">この日のスケジュールはまだ空っぽです。<br/>テンプレートを選んで予定を作りましょう！</p>
+                
+                <div className="w-full space-y-3">
+                  {baselines.map(b => (
+                    <button key={b.id} onClick={() => applyBaseline(b.id)} className="w-full bg-white border-2 border-blue-100 text-blue-600 font-bold py-4 px-4 rounded-xl hover:bg-blue-50 hover:border-blue-200 transition-all flex items-center justify-between shadow-sm">
+                      <span>{b.name} を適用する</span>
+                      <ChevronRight className="w-5 h-5 opacity-50" />
+                    </button>
+                  ))}
+                  <div className="pt-4">
+                    <button onClick={applyBlank} className="w-full bg-transparent text-slate-500 font-bold py-3 px-4 rounded-xl hover:bg-slate-200 transition-colors">
+                      白紙からスケジュールを作る
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* 通常のタイムライン表示 */
+              timelineBlocks.map((block) => {
+                const heightPx = Math.max(block.durationMinutes * 1.2, 48);
+                const startMins = timeToMinutes(block.startTime);
+                const endMins = timeToMinutes(block.endTime) === 0 && block.endTime === '00:00' ? 1440 : timeToMinutes(block.endTime);
+                const isCurrentTimeInSlot = isTodayView && currentMinutes >= startMins && currentMinutes < endMins;
+                const progressPercent = isCurrentTimeInSlot ? ((currentMinutes - startMins) / block.durationMinutes) * 100 : 0;
+
+                return (
+                  <div key={block.id} className="flex gap-3 relative">
+                    <div className="w-12 shrink-0 flex flex-col items-end text-xs text-slate-400 font-medium pt-2">
+                      <span>{block.startTime}</span>
+                    </div>
+
+                    <div className="flex-1 relative">
+                      {/* 現在時刻バー（今日だけ表示） */}
+                      {isCurrentTimeInSlot && (
+                        <div className="absolute left-[-56px] right-0 z-10 flex items-center pointer-events-none" style={{ top: `${progressPercent}%`, transform: 'translateY(-50%)' }}>
+                          <div className="text-[10px] font-bold text-red-500 bg-white/90 px-1 rounded shadow-sm mr-1 border border-red-100">NOW</div>
+                          <div className="w-2 h-2 rounded-full bg-red-500 shrink-0"></div>
+                          <div className="flex-1 h-[2px] bg-red-500/80 shadow-[0_0_4px_rgba(239,68,68,0.5)]"></div>
+                        </div>
+                      )}
+
+                      {block.type === 'free' ? (
+                        <div style={{ height: `${heightPx}px` }} onClick={() => handleOpenEventModal(block)} className="w-full rounded-xl border-2 border-dashed border-blue-200 bg-white/50 flex flex-col justify-center items-center cursor-pointer hover:bg-blue-50 transition-colors group">
+                          <span className="text-sm font-bold text-blue-300 group-hover:text-blue-500">＋ 予定を追加</span>
+                          <span className="text-xs font-medium text-blue-300 mt-1">{block.durationMinutes}分</span>
+                        </div>
+                      ) : (
+                        <div className="relative w-full" style={{ height: `${heightPx}px` }}>
+                          {block.events.map((ev, idx) => {
+                            const startOffset = timeToMinutes(ev.startTime) - timeToMinutes(block.startTime);
+                            const evEndMins = timeToMinutes(ev.endTime) === 0 && ev.endTime === '00:00' ? 1440 : timeToMinutes(ev.endTime);
+                            const duration = evEndMins - timeToMinutes(ev.startTime);
+                            const widthPct = 100 / block.events.length;
+                            const leftPct = idx * widthPct;
+                            const topPx = block.durationMinutes > 0 ? (startOffset / block.durationMinutes) * heightPx : 0;
+                            const evHeightPx = block.durationMinutes > 0 ? (duration / block.durationMinutes) * heightPx : heightPx;
+                            
+                            const borderStyle = ev.isLocked ? 'border border-black/5 opacity-50 shadow-none' : 'border-2 border-black/5 hover:brightness-95 shadow-sm';
+                            const dragStyle = ev.isDragging ? 'scale-105 shadow-xl ring-2 ring-blue-400 z-50 opacity-90' : 'z-10';
+                            const isShort = duration <= 30;
+
+                            return (
+                              <div key={ev.id}
+                                onPointerDown={(e) => {
+                                  e.stopPropagation();
+                                  setDragState({ id: ev.id, isLocked: ev.isLocked, startMins: timeToMinutes(ev.startTime), duration: timeToMinutes(ev.endTime === '00:00' ? '24:00' : ev.endTime) - timeToMinutes(ev.startTime), initialY: e.clientY });
+                                  setDragPreview({ startMins: timeToMinutes(ev.startTime), endMins: timeToMinutes(ev.endTime === '00:00' ? '24:00' : ev.endTime) });
+                                  e.currentTarget.setPointerCapture(e.pointerId);
+                                }}
+                                className={`absolute rounded-xl flex overflow-hidden transition-all duration-200 ${isShort ? 'flex-row items-center px-2 py-1 gap-1' : 'flex-col p-2'} ${ev.color} ${borderStyle} ${dragStyle} ${!ev.isLocked ? 'cursor-grab active:cursor-grabbing touch-none select-none' : 'cursor-pointer'}`}
+                                style={{ top: `${topPx}px`, height: `${evHeightPx}px`, width: `calc(${widthPct}% - 4px)`, left: `calc(${leftPct}% + 2px)` }}
+                              >
+                                {isShort ? (
+                                  <>
+                                    <span className="font-bold text-[12px] truncate flex-1 leading-tight pointer-events-none">{ev.title}</span>
+                                    <span className="text-[9px] opacity-80 font-medium shrink-0 pointer-events-none">{ev.startTime} ({duration}分)</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="flex justify-between items-start mb-1 pointer-events-none">
+                                      <span className="font-bold text-[13px] leading-tight line-clamp-2">{ev.title}</span>
+                                    </div>
+                                    <div className="text-[10px] opacity-80 flex items-center gap-1 mt-auto font-medium pointer-events-none">
+                                      <Clock className="w-2.5 h-2.5" />{ev.startTime}-{ev.endTime} <span className="ml-1">({duration}分)</span>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
       </main>
 
-      {/* --- フローティング追加ボタン（予定がある時だけ） --- */}
-      {currentEvents !== undefined && (
+      {/* --- フローティング追加ボタン（予定がある時＆月間モード以外の時だけ） --- */}
+      {viewMode !== 'monthly' && currentEvents !== undefined && (
         <button onClick={handleFabClick} className={`fixed bottom-6 right-6 w-14 h-14 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all z-30 ${viewMode === 'template' ? 'bg-slate-700 hover:bg-slate-800' : 'bg-blue-600 hover:bg-blue-700'}`} title="予定を追加">
           <Plus className="w-6 h-6" />
         </button>

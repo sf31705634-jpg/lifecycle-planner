@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Tab Grouper by Domain",
+  "version": "1.0.0",
+  "description": "ツールバーのアイコンをクリックすると、同じドメインのタブをまとめてグループ化します。",
+  "permissions": ["tabs", "tabGroups"],
+  "action": {
+    "default_title": "同じドメインのタブをグループ化",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
